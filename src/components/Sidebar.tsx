@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
@@ -10,12 +10,19 @@ const NAV = [
   { href: "/reports", label: "Reports", icon: "📊" },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ username }: { username: string | null }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { theme, setTheme } = useTheme();
   // Avoid hydration mismatch: only show the resolved toggle after mount.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  };
 
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-surface">
@@ -46,12 +53,26 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t border-border p-3">
+      <div className="space-y-2 border-t border-border p-3">
+        {username && (
+          <div className="flex items-center gap-2 px-1 text-sm text-foreground">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">
+              {username.slice(0, 2).toUpperCase()}
+            </span>
+            <span className="truncate">{username}</span>
+          </div>
+        )}
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           className="flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-muted hover:text-foreground"
         >
           {mounted && theme === "dark" ? "☀️ Light mode" : "🌙 Dark mode"}
+        </button>
+        <button
+          onClick={logout}
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-muted hover:text-red-500"
+        >
+          ⎋ Log out
         </button>
       </div>
     </aside>

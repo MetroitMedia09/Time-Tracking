@@ -22,6 +22,7 @@ export default async function SharedReportPage({
   if (!share) notFound();
 
   const data = await buildReport({
+    userId: share.userId,
     startDate: share.startDate,
     endDate: share.endDate,
     projectId: share.projectId,

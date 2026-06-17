@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { timeEntries } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { requireUser } from "@/lib/auth";
 
-// PATCH /api/entries/:id -> stop the timer (set endTime) or update description
+// PATCH /api/entries/:id -> stop the timer (set endTime) or update fields
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+  const { userId } = auth;
+
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
 
@@ -37,13 +42,16 @@ export async function PATCH(
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 
+  // Scope to the current user's entry only.
+  const ownership = and(eq(timeEntries.id, id), eq(timeEntries.userId, userId));
+
   // Guard: end must be after start. Check against existing values for any
   // field not being changed in this request.
   if (updates.startTime || updates.endTime) {
     const existing = await db
       .select()
       .from(timeEntries)
-      .where(eq(timeEntries.id, id))
+      .where(ownership)
       .limit(1);
     if (!existing[0]) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -61,7 +69,7 @@ export async function PATCH(
   const [entry] = await db
     .update(timeEntries)
     .set(updates)
-    .where(eq(timeEntries.id, id))
+    .where(ownership)
     .returning();
 
   if (!entry) {
@@ -75,7 +83,13 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+  const { userId } = auth;
+
   const { id } = await params;
-  await db.delete(timeEntries).where(eq(timeEntries.id, id));
+  await db
+    .delete(timeEntries)
+    .where(and(eq(timeEntries.id, id), eq(timeEntries.userId, userId)));
   return NextResponse.json({ ok: true });
 }

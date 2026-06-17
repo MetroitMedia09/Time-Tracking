@@ -5,6 +5,7 @@ import type { TimeEntryWithProject } from "@/db/schema";
 import { durationSeconds } from "@/lib/time";
 
 export type ReportFilter = {
+  userId: string; // report is always scoped to one user
   startDate?: string | null; // "YYYY-MM-DD" inclusive
   endDate?: string | null; // "YYYY-MM-DD" inclusive
   projectId?: string | null;
@@ -29,7 +30,10 @@ export type ReportData = {
 
 // Build the report for a given filter. Only finished entries are counted.
 export async function buildReport(filter: ReportFilter): Promise<ReportData> {
-  const conditions = [isNotNull(timeEntries.endTime)];
+  const conditions = [
+    eq(timeEntries.userId, filter.userId),
+    isNotNull(timeEntries.endTime),
+  ];
 
   if (filter.startDate) {
     conditions.push(gte(timeEntries.startTime, new Date(filter.startDate + "T00:00:00")));

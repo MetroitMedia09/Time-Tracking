@@ -1,22 +1,28 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { timeEntries } from "@/db/schema";
-import { desc, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { requireUser } from "@/lib/auth";
 
 // Join shape: entry -> project -> client
 const withProject = {
   with: { project: { with: { client: true } } },
 } as const;
 
-// GET /api/entries -> { running, entries }
+// GET /api/entries -> { running, entries } (current user's only)
 export async function GET() {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+  const { userId } = auth;
+
   const running = await db.query.timeEntries.findFirst({
-    where: isNull(timeEntries.endTime),
+    where: and(eq(timeEntries.userId, userId), isNull(timeEntries.endTime)),
     orderBy: desc(timeEntries.startTime),
     ...withProject,
   });
 
   const entries = await db.query.timeEntries.findMany({
+    where: eq(timeEntries.userId, userId),
     orderBy: desc(timeEntries.startTime),
     limit: 50,
     ...withProject,
@@ -27,6 +33,10 @@ export async function GET() {
 
 // POST /api/entries -> start a new timer (rejects if one is already running)
 export async function POST(req: Request) {
+  const auth = await requireUser();
+  if (auth instanceof NextResponse) return auth;
+  const { userId } = auth;
+
   const body = await req.json().catch(() => ({}));
   const description = typeof body.description === "string" ? body.description : "";
   const projectId =
@@ -35,7 +45,7 @@ export async function POST(req: Request) {
   const alreadyRunning = await db
     .select()
     .from(timeEntries)
-    .where(isNull(timeEntries.endTime))
+    .where(and(eq(timeEntries.userId, userId), isNull(timeEntries.endTime)))
     .limit(1);
 
   if (alreadyRunning.length > 0) {
@@ -47,7 +57,7 @@ export async function POST(req: Request) {
 
   const [entry] = await db
     .insert(timeEntries)
-    .values({ description, projectId, startTime: new Date() })
+    .values({ userId, description, projectId, startTime: new Date() })
     .returning();
 
   return NextResponse.json(entry, { status: 201 });

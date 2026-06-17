@@ -1,8 +1,20 @@
 import { pgTable, uuid, text, timestamp } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const clients = pgTable("clients", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -11,6 +23,9 @@ export const clients = pgTable("clients", {
 
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   // Hex color shown as the dot next to the project, e.g. "#16a34a".
   color: text("color").notNull().default("#3b82f6"),
@@ -24,6 +39,9 @@ export const projects = pgTable("projects", {
 
 export const timeEntries = pgTable("time_entries", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   description: text("description").notNull().default(""),
   startTime: timestamp("start_time", { withTimezone: true }).notNull(),
   // Null while the timer is running; set when stopped.
@@ -57,6 +75,9 @@ export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
 
 export const sharedReports = pgTable("shared_reports", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   // Public token used in the URL: /shared/<token>
   token: text("token").notNull().unique(),
   name: text("name").notNull().default("Time Report"),
@@ -71,6 +92,8 @@ export const sharedReports = pgTable("shared_reports", {
     .defaultNow(),
 });
 
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
 export type SharedReport = typeof sharedReports.$inferSelect;
 export type NewSharedReport = typeof sharedReports.$inferInsert;
 
