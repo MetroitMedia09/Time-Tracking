@@ -95,15 +95,17 @@ export default function ReportView({ data }: { data: ReportData }) {
             </ul>
           </div>
 
-          {/* Entries table */}
-          <div className="overflow-hidden rounded-lg border border-border bg-surface">
-            <table className="w-full text-sm">
+          {/* Entries table — scrolls horizontally on small screens */}
+          <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
                   <th className="px-4 py-3 font-medium">Description</th>
                   <th className="px-4 py-3 font-medium">Project</th>
-                  <th className="px-4 py-3 font-medium">Time</th>
-                  <th className="px-4 py-3 text-right font-medium">Duration</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">Time</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-right font-medium">
+                    Duration
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -116,7 +118,7 @@ export default function ReportView({ data }: { data: ReportData }) {
                     </td>
                     <td className="px-4 py-3">
                       {e.project ? (
-                        <span className="flex items-center gap-2">
+                        <span className="flex items-center gap-2 whitespace-nowrap">
                           <span
                             className="inline-block h-2.5 w-2.5 rounded-full"
                             style={{ backgroundColor: e.project.color }}
@@ -129,11 +131,11 @@ export default function ReportView({ data }: { data: ReportData }) {
                         <span className="text-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-muted">
+                    <td className="whitespace-nowrap px-4 py-3 text-muted">
                       <LocalClock iso={e.startTime as unknown as string} /> –{" "}
                       <LocalClock iso={e.endTime as unknown as string} />
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-foreground">
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-foreground">
                       {formatDuration(
                         (new Date(e.endTime as unknown as string).getTime() -
                           new Date(e.startTime as unknown as string).getTime()) /
