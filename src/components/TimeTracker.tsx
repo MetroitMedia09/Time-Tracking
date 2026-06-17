@@ -144,6 +144,25 @@ export default function TimeTracker() {
     byDay.get(day)!.push(e);
   }
 
+  const dayLabel = (iso: string) =>
+    new Date(iso).toLocaleDateString([], {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+
+  // Live seconds from the currently running timer (0 if none). This re-renders
+  // every second (see the tick effect), so the day total counts up in real time.
+  const runningSeconds = running
+    ? durationSeconds(running.startTime as unknown as string, null)
+    : 0;
+  const runningDay = running
+    ? dayLabel(running.startTime as unknown as string)
+    : null;
+
+  // Make sure the running timer's day shows up even with no finished entries.
+  if (runningDay && !byDay.has(runningDay)) byDay.set(runningDay, []);
+
   // Within a day, collapse entries that share the same description + project
   // into one row with a count badge (like Clockify). `items` keeps the
   // underlying entries (already sorted newest-first); `rep` is the newest one.
@@ -219,14 +238,14 @@ export default function TimeTracker() {
       {/* Entries */}
       {loading ? (
         <p className="text-sm text-muted">Loading…</p>
-      ) : finished.length === 0 ? (
+      ) : byDay.size === 0 ? (
         <p className="text-sm text-muted">
           No entries yet. Start the timer above.
         </p>
       ) : (
         <div className="space-y-6">
           {[...byDay.entries()].map(([day, dayEntries]) => {
-            const total = dayEntries.reduce(
+            const finishedTotal = dayEntries.reduce(
               (sum, e) =>
                 sum +
                 durationSeconds(
@@ -235,6 +254,10 @@ export default function TimeTracker() {
                 ),
               0,
             );
+            // Include the live running timer in its own day's total so the
+            // figure reflects exactly how much has been worked, in real time.
+            const total =
+              finishedTotal + (day === runningDay ? runningSeconds : 0);
             return (
               <div key={day}>
                 <div className="mb-2 flex items-center justify-between">
