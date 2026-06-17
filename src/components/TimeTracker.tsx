@@ -22,6 +22,15 @@ export default function TimeTracker() {
   const [busy, setBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [editing, setEditing] = useState<TimeEntryWithProject | null>(null);
+  // Group keys whose accordion is expanded to show individual entries.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (key: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
   // Ticks every second to re-render the live elapsed time.
   const [, setNow] = useState(Date.now());
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -238,68 +247,143 @@ export default function TimeTracker() {
                   {groupDay(dayEntries).map((g) => {
                     const e = g.rep;
                     const count = g.items.length;
+                    const isGroup = count > 1;
+                    const isOpen = expanded.has(g.key);
                     return (
-                      <li
-                        key={g.key}
-                        className="group flex items-center gap-3 px-4 py-3 text-sm"
-                      >
-                        {/* Count badge (like Clockify) when entries are grouped */}
-                        {count > 1 ? (
-                          <span
-                            className="flex h-5 min-w-5 items-center justify-center rounded bg-blue-600 px-1 text-xs font-medium text-white"
-                            title={`${count} entries`}
-                          >
-                            {count}
-                          </span>
-                        ) : (
-                          <span className="w-5" />
-                        )}
-                        <span className="flex-1 text-foreground">
-                          {e.description || (
-                            <span className="text-muted">No description</span>
+                      <li key={g.key}>
+                        {/* Group / single header row */}
+                        <div className="group flex items-center gap-3 px-4 py-3 text-sm">
+                          {/* Count badge — clickable to expand when grouped */}
+                          {isGroup ? (
+                            <button
+                              onClick={() => toggleExpanded(g.key)}
+                              className="flex items-center gap-1 rounded text-muted hover:text-foreground"
+                              aria-label={isOpen ? "Collapse" : "Expand"}
+                              title={`${count} entries`}
+                            >
+                              <span className="flex h-5 min-w-5 items-center justify-center rounded bg-blue-600 px-1 text-xs font-medium text-white">
+                                {count}
+                              </span>
+                              <span className="text-[10px]">
+                                {isOpen ? "▲" : "▼"}
+                              </span>
+                            </button>
+                          ) : (
+                            <span className="w-5" />
                           )}
-                        </span>
-                        <ProjectPicker
-                          projects={projects}
-                          value={e.projectId}
-                          onChange={(pid) => setEntryProject(e.id, pid)}
-                          onCreated={(p) =>
-                            setProjects((prev) => [...prev, p])
-                          }
-                        />
-                        <span className="text-muted">
-                          {formatClock(e.startTime as unknown as string)} –{" "}
-                          {formatClock(e.endTime as unknown as string)}
-                        </span>
-                        <span className="font-mono tabular-nums text-foreground">
-                          {formatDuration(g.seconds)}
-                        </span>
-                        {/* Resume: start a new timer with this description/project */}
-                        <button
-                          onClick={() => resume(e)}
-                          disabled={busy}
-                          className="text-muted transition hover:text-green-500 disabled:opacity-40"
-                          aria-label="Resume entry"
-                          title="Resume"
-                        >
-                          ▶
-                        </button>
-                        <button
-                          onClick={() => setEditing(e)}
-                          className="text-muted opacity-0 transition group-hover:opacity-100 hover:text-blue-500"
-                          aria-label="Edit entry"
-                          title="Edit"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          onClick={() => setPendingDelete(e.id)}
-                          className="text-muted opacity-0 transition group-hover:opacity-100 hover:text-red-500"
-                          aria-label="Delete entry"
-                          title="Delete"
-                        >
-                          ✕
-                        </button>
+                          <button
+                            onClick={() => isGroup && toggleExpanded(g.key)}
+                            className={`flex-1 text-left text-foreground ${
+                              isGroup ? "cursor-pointer" : "cursor-default"
+                            }`}
+                          >
+                            {e.description || (
+                              <span className="text-muted">No description</span>
+                            )}
+                          </button>
+                          <ProjectPicker
+                            projects={projects}
+                            value={e.projectId}
+                            onChange={(pid) => setEntryProject(e.id, pid)}
+                            onCreated={(p) =>
+                              setProjects((prev) => [...prev, p])
+                            }
+                          />
+                          <span className="text-muted">
+                            {isGroup
+                              ? `${count} entries`
+                              : `${formatClock(e.startTime as unknown as string)} – ${formatClock(e.endTime as unknown as string)}`}
+                          </span>
+                          <span className="font-mono tabular-nums text-foreground">
+                            {formatDuration(g.seconds)}
+                          </span>
+                          {/* Resume always available on the header */}
+                          <button
+                            onClick={() => resume(e)}
+                            disabled={busy}
+                            className="text-muted transition hover:text-green-500 disabled:opacity-40"
+                            aria-label="Resume entry"
+                            title="Resume"
+                          >
+                            ▶
+                          </button>
+                          {/* Edit/Delete on header only for single entries.
+                              Grouped rows edit/delete via the expanded items. */}
+                          {!isGroup && (
+                            <>
+                              <button
+                                onClick={() => setEditing(e)}
+                                className="text-muted opacity-0 transition group-hover:opacity-100 hover:text-blue-500"
+                                aria-label="Edit entry"
+                                title="Edit"
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                onClick={() => setPendingDelete(e.id)}
+                                className="text-muted opacity-0 transition group-hover:opacity-100 hover:text-red-500"
+                                aria-label="Delete entry"
+                                title="Delete"
+                              >
+                                ✕
+                              </button>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Expanded individual entries (accordion) */}
+                        {isGroup && isOpen && (
+                          <ul className="divide-y divide-border border-t border-border bg-black/10 dark:bg-white/5">
+                            {g.items.map((item) => (
+                              <li
+                                key={item.id}
+                                className="group/item flex items-center gap-3 py-2.5 pl-12 pr-4 text-sm"
+                              >
+                                <span className="flex-1 text-muted">
+                                  {item.description || "No description"}
+                                </span>
+                                <span className="text-muted">
+                                  {formatClock(item.startTime as unknown as string)}{" "}
+                                  –{" "}
+                                  {formatClock(item.endTime as unknown as string)}
+                                </span>
+                                <span className="font-mono tabular-nums text-foreground">
+                                  {formatDuration(
+                                    durationSeconds(
+                                      item.startTime as unknown as string,
+                                      item.endTime as unknown as string,
+                                    ),
+                                  )}
+                                </span>
+                                <button
+                                  onClick={() => resume(item)}
+                                  disabled={busy}
+                                  className="text-muted transition hover:text-green-500 disabled:opacity-40"
+                                  aria-label="Resume entry"
+                                  title="Resume"
+                                >
+                                  ▶
+                                </button>
+                                <button
+                                  onClick={() => setEditing(item)}
+                                  className="text-muted opacity-0 transition group-hover/item:opacity-100 hover:text-blue-500"
+                                  aria-label="Edit entry"
+                                  title="Edit"
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  onClick={() => setPendingDelete(item.id)}
+                                  className="text-muted opacity-0 transition group-hover/item:opacity-100 hover:text-red-500"
+                                  aria-label="Delete entry"
+                                  title="Delete"
+                                >
+                                  ✕
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </li>
                     );
                   })}
