@@ -41,6 +41,9 @@ export async function POST(req: Request) {
   const description = typeof body.description === "string" ? body.description : "";
   const projectId =
     typeof body.projectId === "string" && body.projectId ? body.projectId : null;
+  // When true (e.g. the Resume button), stop any running timer first instead
+  // of rejecting. Otherwise a running timer is a 409.
+  const replaceRunning = body.replaceRunning === true;
 
   const alreadyRunning = await db
     .select()
@@ -49,10 +52,17 @@ export async function POST(req: Request) {
     .limit(1);
 
   if (alreadyRunning.length > 0) {
-    return NextResponse.json(
-      { error: "A timer is already running" },
-      { status: 409 },
-    );
+    if (!replaceRunning) {
+      return NextResponse.json(
+        { error: "A timer is already running" },
+        { status: 409 },
+      );
+    }
+    // Stop the currently running timer before starting the new one.
+    await db
+      .update(timeEntries)
+      .set({ endTime: new Date() })
+      .where(and(eq(timeEntries.userId, userId), isNull(timeEntries.endTime)));
   }
 
   const [entry] = await db

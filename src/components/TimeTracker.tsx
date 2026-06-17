@@ -82,6 +82,25 @@ export default function TimeTracker() {
     setBusy(false);
   };
 
+  // Resume: start a new timer with the same description + project.
+  // Stops any currently running timer first (replaceRunning).
+  const resume = async (e: TimeEntryWithProject) => {
+    setBusy(true);
+    await fetch("/api/entries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        description: e.description,
+        projectId: e.projectId,
+        replaceRunning: true,
+      }),
+    });
+    setDescription(e.description);
+    setProjectId(e.projectId);
+    await load();
+    setBusy(false);
+  };
+
   // Assign/clear a project on an already-finished entry.
   const setEntryProject = async (id: string, pid: string | null) => {
     await fetch(`/api/entries/${id}`, {
@@ -115,6 +134,34 @@ export default function TimeTracker() {
     if (!byDay.has(day)) byDay.set(day, []);
     byDay.get(day)!.push(e);
   }
+
+  // Within a day, collapse entries that share the same description + project
+  // into one row with a count badge (like Clockify). `items` keeps the
+  // underlying entries (already sorted newest-first); `rep` is the newest one.
+  type EntryGroup = {
+    key: string;
+    rep: TimeEntryWithProject;
+    items: TimeEntryWithProject[];
+    seconds: number;
+  };
+  const groupDay = (dayEntries: TimeEntryWithProject[]): EntryGroup[] => {
+    const map = new Map<string, EntryGroup>();
+    for (const e of dayEntries) {
+      const key = `${e.description}|${e.projectId ?? ""}`;
+      const secs = durationSeconds(
+        e.startTime as unknown as string,
+        e.endTime as unknown as string,
+      );
+      const g = map.get(key);
+      if (g) {
+        g.items.push(e);
+        g.seconds += secs;
+      } else {
+        map.set(key, { key, rep: e, items: [e], seconds: secs });
+      }
+    }
+    return [...map.values()];
+  };
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
@@ -188,54 +235,74 @@ export default function TimeTracker() {
                   </span>
                 </div>
                 <ul className="divide-y divide-border rounded-lg border border-border bg-surface">
-                  {dayEntries.map((e) => (
-                    <li
-                      key={e.id}
-                      className="group flex items-center gap-3 px-4 py-3 text-sm"
-                    >
-                      <span className="flex-1 text-foreground">
-                        {e.description || (
-                          <span className="text-muted">No description</span>
-                        )}
-                      </span>
-                      <ProjectPicker
-                        projects={projects}
-                        value={e.projectId}
-                        onChange={(pid) => setEntryProject(e.id, pid)}
-                        onCreated={(p) =>
-                          setProjects((prev) => [...prev, p])
-                        }
-                      />
-                      <span className="text-muted">
-                        {formatClock(e.startTime as unknown as string)} –{" "}
-                        {formatClock(e.endTime as unknown as string)}
-                      </span>
-                      <span className="font-mono tabular-nums text-foreground">
-                        {formatDuration(
-                          durationSeconds(
-                            e.startTime as unknown as string,
-                            e.endTime as unknown as string,
-                          ),
-                        )}
-                      </span>
-                      <button
-                        onClick={() => setEditing(e)}
-                        className="text-muted opacity-0 transition group-hover:opacity-100 hover:text-blue-500"
-                        aria-label="Edit entry"
-                        title="Edit"
+                  {groupDay(dayEntries).map((g) => {
+                    const e = g.rep;
+                    const count = g.items.length;
+                    return (
+                      <li
+                        key={g.key}
+                        className="group flex items-center gap-3 px-4 py-3 text-sm"
                       >
-                        ✏️
-                      </button>
-                      <button
-                        onClick={() => setPendingDelete(e.id)}
-                        className="text-muted opacity-0 transition group-hover:opacity-100 hover:text-red-500"
-                        aria-label="Delete entry"
-                        title="Delete"
-                      >
-                        ✕
-                      </button>
-                    </li>
-                  ))}
+                        {/* Count badge (like Clockify) when entries are grouped */}
+                        {count > 1 ? (
+                          <span
+                            className="flex h-5 min-w-5 items-center justify-center rounded bg-blue-600 px-1 text-xs font-medium text-white"
+                            title={`${count} entries`}
+                          >
+                            {count}
+                          </span>
+                        ) : (
+                          <span className="w-5" />
+                        )}
+                        <span className="flex-1 text-foreground">
+                          {e.description || (
+                            <span className="text-muted">No description</span>
+                          )}
+                        </span>
+                        <ProjectPicker
+                          projects={projects}
+                          value={e.projectId}
+                          onChange={(pid) => setEntryProject(e.id, pid)}
+                          onCreated={(p) =>
+                            setProjects((prev) => [...prev, p])
+                          }
+                        />
+                        <span className="text-muted">
+                          {formatClock(e.startTime as unknown as string)} –{" "}
+                          {formatClock(e.endTime as unknown as string)}
+                        </span>
+                        <span className="font-mono tabular-nums text-foreground">
+                          {formatDuration(g.seconds)}
+                        </span>
+                        {/* Resume: start a new timer with this description/project */}
+                        <button
+                          onClick={() => resume(e)}
+                          disabled={busy}
+                          className="text-muted transition hover:text-green-500 disabled:opacity-40"
+                          aria-label="Resume entry"
+                          title="Resume"
+                        >
+                          ▶
+                        </button>
+                        <button
+                          onClick={() => setEditing(e)}
+                          className="text-muted opacity-0 transition group-hover:opacity-100 hover:text-blue-500"
+                          aria-label="Edit entry"
+                          title="Edit"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => setPendingDelete(e.id)}
+                          className="text-muted opacity-0 transition group-hover:opacity-100 hover:text-red-500"
+                          aria-label="Delete entry"
+                          title="Delete"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             );

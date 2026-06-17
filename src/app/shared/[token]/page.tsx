@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { sharedReports } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { buildReport } from "@/lib/report";
-import ReportView from "@/components/ReportView";
+import SharedReportClient from "@/components/SharedReportClient";
 
 // Always render fresh data (snapshot filter, live numbers).
 export const dynamic = "force-dynamic";
@@ -47,7 +47,12 @@ export default async function SharedReportPage({
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-6 py-8">
-        <ReportView data={data} />
+        <SharedReportClient
+          token={token}
+          initialData={data}
+          initialStart={share.startDate}
+          initialEnd={share.endDate}
+        />
       </main>
     </div>
   );
