@@ -24,8 +24,9 @@ export default function TimeTracker() {
   const [editing, setEditing] = useState<TimeEntryWithProject | null>(null);
   // Group keys whose accordion is expanded to show individual entries.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // How many days of entries to show (pagination).
-  const [daysShown, setDaysShown] = useState(10);
+  // Pagination: how many days per page, and which page we're on (0-based).
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(0);
 
   const toggleExpanded = (key: string) =>
     setExpanded((prev) => {
@@ -169,12 +170,16 @@ export default function TimeTracker() {
   // Make sure the running timer's day shows up even with no finished entries.
   if (runningDay && !byDay.has(runningDay)) byDay.set(runningDay, []);
 
-  // Newest day first, then paginate to the chosen number of days.
+  // Newest day first, then slice to the current page.
   const sortedDays = [...byDay.entries()].sort(([a], [b]) =>
     a < b ? 1 : a > b ? -1 : 0,
   );
   const totalDays = sortedDays.length;
-  const visibleDays = sortedDays.slice(0, daysShown);
+  const pageCount = Math.max(1, Math.ceil(totalDays / pageSize));
+  // Clamp the page in case totalDays/pageSize shrank since it was set.
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageStart = currentPage * pageSize;
+  const visibleDays = sortedDays.slice(pageStart, pageStart + pageSize);
 
   // Within a day, collapse entries that share the same description + project
   // into one row with a count badge (like Clockify). `items` keeps the
@@ -434,27 +439,54 @@ export default function TimeTracker() {
             );
           })}
 
-          {/* Pagination: choose how many days to show */}
+          {/* Pagination: page size + prev/next */}
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-sm text-muted">
             <span>
-              Showing {Math.min(daysShown, totalDays)} of {totalDays} day
-              {totalDays === 1 ? "" : "s"}
+              {totalDays === 0
+                ? "No days"
+                : `Days ${pageStart + 1}–${pageStart + visibleDays.length} of ${totalDays}`}
             </span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs">Days per page:</span>
-              {[10, 20, 50].map((n) => (
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs">Days per page:</span>
+                {[10, 20, 50].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => {
+                      setPageSize(n);
+                      setPage(0);
+                    }}
+                    className={`rounded-md border px-2.5 py-1 text-xs transition ${
+                      pageSize === n
+                        ? "border-blue-500 bg-blue-600 text-white"
+                        : "border-border text-muted hover:text-foreground"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1.5">
                 <button
-                  key={n}
-                  onClick={() => setDaysShown(n)}
-                  className={`rounded-md border px-2.5 py-1 text-xs transition ${
-                    daysShown === n
-                      ? "border-blue-500 bg-blue-600 text-white"
-                      : "border-border text-muted hover:text-foreground"
-                  }`}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={currentPage === 0}
+                  className="rounded-md border border-border px-2 py-1 text-xs text-muted transition hover:text-foreground disabled:opacity-40"
+                  aria-label="Previous page"
                 >
-                  {n}
+                  ‹ Prev
                 </button>
-              ))}
+                <span className="text-xs tabular-nums">
+                  {currentPage + 1} / {pageCount}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                  disabled={currentPage >= pageCount - 1}
+                  className="rounded-md border border-border px-2 py-1 text-xs text-muted transition hover:text-foreground disabled:opacity-40"
+                  aria-label="Next page"
+                >
+                  Next ›
+                </button>
+              </div>
             </div>
           </div>
         </div>
