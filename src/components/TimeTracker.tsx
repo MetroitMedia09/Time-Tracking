@@ -24,6 +24,8 @@ export default function TimeTracker() {
   const [editing, setEditing] = useState<TimeEntryWithProject | null>(null);
   // Group keys whose accordion is expanded to show individual entries.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // How many days of entries to show (pagination).
+  const [daysShown, setDaysShown] = useState(10);
 
   const toggleExpanded = (key: string) =>
     setExpanded((prev) => {
@@ -131,18 +133,13 @@ export default function TimeTracker() {
     ? formatDuration(durationSeconds(running.startTime as unknown as string, null))
     : "00:00:00";
 
-  // Group finished entries by calendar day.
-  const finished = entries.filter((e) => e.endTime);
-  const byDay = new Map<string, TimeEntryWithProject[]>();
-  for (const e of finished) {
-    const day = new Date(e.startTime as unknown as string).toLocaleDateString([], {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    });
-    if (!byDay.has(day)) byDay.set(day, []);
-    byDay.get(day)!.push(e);
-  }
+  // A sortable "YYYY-MM-DD" key in the viewer's LOCAL time, so days order
+  // chronologically regardless of how they were inserted.
+  const dayKey = (iso: string) => {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
 
   const dayLabel = (iso: string) =>
     new Date(iso).toLocaleDateString([], {
@@ -151,17 +148,33 @@ export default function TimeTracker() {
       day: "numeric",
     });
 
+  // Group finished entries by calendar day (keyed by sortable day key).
+  const finished = entries.filter((e) => e.endTime);
+  const byDay = new Map<string, TimeEntryWithProject[]>();
+  for (const e of finished) {
+    const key = dayKey(e.startTime as unknown as string);
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key)!.push(e);
+  }
+
   // Live seconds from the currently running timer (0 if none). This re-renders
   // every second (see the tick effect), so the day total counts up in real time.
   const runningSeconds = running
     ? durationSeconds(running.startTime as unknown as string, null)
     : 0;
   const runningDay = running
-    ? dayLabel(running.startTime as unknown as string)
+    ? dayKey(running.startTime as unknown as string)
     : null;
 
   // Make sure the running timer's day shows up even with no finished entries.
   if (runningDay && !byDay.has(runningDay)) byDay.set(runningDay, []);
+
+  // Newest day first, then paginate to the chosen number of days.
+  const sortedDays = [...byDay.entries()].sort(([a], [b]) =>
+    a < b ? 1 : a > b ? -1 : 0,
+  );
+  const totalDays = sortedDays.length;
+  const visibleDays = sortedDays.slice(0, daysShown);
 
   // Within a day, collapse entries that share the same description + project
   // into one row with a count badge (like Clockify). `items` keeps the
@@ -244,7 +257,13 @@ export default function TimeTracker() {
         </p>
       ) : (
         <div className="space-y-6">
-          {[...byDay.entries()].map(([day, dayEntries]) => {
+          {visibleDays.map(([day, dayEntries]) => {
+            // Label from a representative timestamp for this day. Falls back to
+            // the running timer's start when the day has only a live entry.
+            const labelIso =
+              (dayEntries[0]?.startTime as unknown as string) ??
+              (running?.startTime as unknown as string);
+            const dayName = labelIso ? dayLabel(labelIso) : day;
             const finishedTotal = dayEntries.reduce(
               (sum, e) =>
                 sum +
@@ -261,7 +280,7 @@ export default function TimeTracker() {
             return (
               <div key={day}>
                 <div className="mb-2 flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-muted">{day}</h2>
+                  <h2 className="text-sm font-semibold text-muted">{dayName}</h2>
                   <span className="font-mono text-sm text-muted">
                     {formatDuration(total)}
                   </span>
@@ -414,6 +433,30 @@ export default function TimeTracker() {
               </div>
             );
           })}
+
+          {/* Pagination: choose how many days to show */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-sm text-muted">
+            <span>
+              Showing {Math.min(daysShown, totalDays)} of {totalDays} day
+              {totalDays === 1 ? "" : "s"}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs">Days per page:</span>
+              {[10, 20, 50].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setDaysShown(n)}
+                  className={`rounded-md border px-2.5 py-1 text-xs transition ${
+                    daysShown === n
+                      ? "border-blue-500 bg-blue-600 text-white"
+                      : "border-border text-muted hover:text-foreground"
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

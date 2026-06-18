@@ -24,7 +24,7 @@ export async function GET() {
   const entries = await db.query.timeEntries.findMany({
     where: eq(timeEntries.userId, userId),
     orderBy: desc(timeEntries.startTime),
-    limit: 50,
+    limit: 1000,
     ...withProject,
   });
 
