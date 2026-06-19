@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { ReportData } from "@/lib/report";
-import { formatClock, formatDuration } from "@/lib/time";
+import type { TimeEntryWithProject } from "@/db/schema";
+import { durationSeconds, formatClock, formatDuration } from "@/lib/time";
 
 function hours(seconds: number) {
   return (seconds / 3600).toFixed(2);
@@ -16,8 +17,45 @@ function LocalClock({ iso }: { iso: string }) {
   return <>{text || "—"}</>;
 }
 
+// A sortable "YYYY-MM-DD" key in the viewer's LOCAL time, so days order
+// chronologically regardless of insertion order.
+function dayKey(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function dayLabel(iso: string) {
+  return new Date(iso).toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+// Renders a day's label only after mount so the SSR markup (timezone-unaware)
+// matches the hydrated client markup.
+function LocalDayLabel({ iso, fallback }: { iso: string; fallback: string }) {
+  const [text, setText] = useState("");
+  useEffect(() => setText(dayLabel(iso)), [iso]);
+  return <>{text || fallback}</>;
+}
+
 export default function ReportView({ data }: { data: ReportData }) {
   const maxDay = Math.max(1, ...data.byDay.map((d) => d.seconds));
+
+  // Group the (already newest-first) entries by calendar day, in the viewer's
+  // local time, so the entries section mirrors the main tracker's layout.
+  const byDay = new Map<string, TimeEntryWithProject[]>();
+  for (const e of data.entries) {
+    const key = dayKey(e.startTime as unknown as string);
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key)!.push(e);
+  }
+  // Newest day first.
+  const dayGroups = [...byDay.entries()].sort(([a], [b]) =>
+    a < b ? 1 : a > b ? -1 : 0,
+  );
 
   return (
     <div className="space-y-8">
@@ -95,57 +133,86 @@ export default function ReportView({ data }: { data: ReportData }) {
             </ul>
           </div>
 
-          {/* Entries table — scrolls horizontally on small screens */}
-          <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
-                  <th className="px-4 py-3 font-medium">Description</th>
-                  <th className="px-4 py-3 font-medium">Project</th>
-                  <th className="whitespace-nowrap px-4 py-3 font-medium">Time</th>
-                  <th className="whitespace-nowrap px-4 py-3 text-right font-medium">
-                    Duration
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {data.entries.map((e) => (
-                  <tr key={e.id}>
-                    <td className="px-4 py-3 text-foreground">
-                      {e.description || (
-                        <span className="text-muted">No description</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {e.project ? (
-                        <span className="flex items-center gap-2 whitespace-nowrap">
-                          <span
-                            className="inline-block h-2.5 w-2.5 rounded-full"
-                            style={{ backgroundColor: e.project.color }}
-                          />
-                          <span style={{ color: e.project.color }}>
-                            {e.project.name}
-                          </span>
-                        </span>
-                      ) : (
-                        <span className="text-muted">—</span>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-muted">
-                      <LocalClock iso={e.startTime as unknown as string} /> –{" "}
-                      <LocalClock iso={e.endTime as unknown as string} />
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-foreground">
-                      {formatDuration(
-                        (new Date(e.endTime as unknown as string).getTime() -
-                          new Date(e.startTime as unknown as string).getTime()) /
-                          1000,
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Entries grouped by day — mirrors the main tracker's layout. */}
+          <div className="space-y-6">
+            {dayGroups.map(([day, dayEntries]) => {
+              const labelIso = dayEntries[0]?.startTime as unknown as string;
+              const dayTotal = dayEntries.reduce(
+                (sum, e) =>
+                  sum +
+                  durationSeconds(
+                    e.startTime as unknown as string,
+                    e.endTime as unknown as string,
+                  ),
+                0,
+              );
+              return (
+                <div key={day}>
+                  <div className="mb-2 flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-muted">
+                      <LocalDayLabel iso={labelIso} fallback={day} />
+                    </h3>
+                    <span className="font-mono text-sm text-muted">
+                      {formatDuration(dayTotal)}
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+                    <table className="w-full min-w-[640px] text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
+                          <th className="px-4 py-3 font-medium">Description</th>
+                          <th className="px-4 py-3 font-medium">Project</th>
+                          <th className="whitespace-nowrap px-4 py-3 font-medium">
+                            Time
+                          </th>
+                          <th className="whitespace-nowrap px-4 py-3 text-right font-medium">
+                            Duration
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {dayEntries.map((e) => (
+                          <tr key={e.id}>
+                            <td className="px-4 py-3 text-foreground">
+                              {e.description || (
+                                <span className="text-muted">No description</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              {e.project ? (
+                                <span className="flex items-center gap-2 whitespace-nowrap">
+                                  <span
+                                    className="inline-block h-2.5 w-2.5 rounded-full"
+                                    style={{ backgroundColor: e.project.color }}
+                                  />
+                                  <span style={{ color: e.project.color }}>
+                                    {e.project.name}
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="text-muted">—</span>
+                              )}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 text-muted">
+                              <LocalClock iso={e.startTime as unknown as string} />{" "}
+                              – <LocalClock iso={e.endTime as unknown as string} />
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-foreground">
+                              {formatDuration(
+                                durationSeconds(
+                                  e.startTime as unknown as string,
+                                  e.endTime as unknown as string,
+                                ),
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </>
       )}
